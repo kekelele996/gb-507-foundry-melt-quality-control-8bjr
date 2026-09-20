@@ -10,3 +10,4 @@ frontend/dist/
 .idea/
 .vscode/
 validation-output/
+.gocache/

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/blueship581/foundry-melt-quality-control/backend/internal/dto"
 	"github.com/blueship581/foundry-melt-quality-control/backend/internal/model"
@@ -14,6 +15,9 @@ type ChemicalSampleRepository interface {
 	Get(context.Context, uint) (model.ChemicalSample, error)
 	GetByCode(context.Context, string) (model.ChemicalSample, error)
 	HasTerminalForHeat(context.Context, string) (bool, error)
+	ListForHeat(context.Context, string) ([]model.ChemicalSample, error)
+	ListVerifiedForHeat(context.Context, string) ([]model.ChemicalSample, error)
+	LockVerified(context.Context, uint) error
 	Create(context.Context, *model.ChemicalSample) error
 	Update(context.Context, uint, uint, *model.ChemicalSample) error
 	Delete(context.Context, uint) error
@@ -42,8 +46,32 @@ func (r *chemicalSampleRepository) GetByCode(ctx context.Context, code string) (
 func (r *chemicalSampleRepository) HasTerminalForHeat(ctx context.Context, heatCode string) (bool, error) {
 	var total int64
 	err := dbForContext(ctx, r.store.db).Model(&model.ChemicalSample{}).
-		Where("heat_code = ? AND status IN ?", heatCode, []string{"verified", "rejected"}).Count(&total).Error
+		Where("heat_code = ? AND status IN ?", heatCode, []string{"verified", "rejected", "locked"}).Count(&total).Error
 	return total > 0, err
+}
+func (r *chemicalSampleRepository) ListForHeat(ctx context.Context, heatCode string) ([]model.ChemicalSample, error) {
+	items := make([]model.ChemicalSample, 0)
+	err := dbForContext(ctx, r.store.db).Where("heat_code = ?", heatCode).
+		Order("sampled_at DESC, id DESC").Find(&items).Error
+	return items, err
+}
+func (r *chemicalSampleRepository) ListVerifiedForHeat(ctx context.Context, heatCode string) ([]model.ChemicalSample, error) {
+	items := make([]model.ChemicalSample, 0)
+	err := dbForContext(ctx, r.store.db).Where("heat_code = ? AND status = ?", heatCode, "verified").
+		Order("sampled_at DESC, id DESC").Find(&items).Error
+	return items, err
+}
+func (r *chemicalSampleRepository) LockVerified(ctx context.Context, id uint) error {
+	result := dbForContext(ctx, r.store.db).Model(&model.ChemicalSample{}).
+		Where("id = ? AND status = ?", id, "verified").
+		Updates(map[string]any{"status": "locked", "version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrVersionConflict
+	}
+	return nil
 }
 func (r *chemicalSampleRepository) Create(ctx context.Context, item *model.ChemicalSample) error {
 	return r.store.Create(ctx, item)

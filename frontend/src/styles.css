@@ -54,6 +54,23 @@ nav a:hover, nav a.active { color: #ffffff; background: #24444d; border-left-col
 .chemistry-section small { display: block; margin-top: 2px; color: #728188; }
 .decision-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; text-transform: uppercase; font-size: 12px; font-weight: 700; color: #47565d; }
 
+.release-workspace { display: grid; gap: 4px; }
+.pairing-board { display: grid; gap: 10px; margin-top: 8px; }
+.pairing-board-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pairing-table .MuiTableCell-root { vertical-align: top; }
+.pairing-table tr.pairing-ready { background: rgb(46 125 90 / 7%); }
+.pairing-table tr.pairing-blocked { background: rgb(199 62 62 / 5%); }
+.delta-stack { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.blocker-list { display: grid; gap: 2px; max-width: 320px; }
+.blocker-list .MuiAlert-message { width: 100%; }
+.review-state-cell { display: grid; gap: 4px; }
+.review-state-cell .MuiChip-root { justify-self: start; }
+.verdict-buttons { display: inline-flex; align-items: center; gap: 4px; }
+.sample-reading { display: grid; gap: 2px; }
+.reading-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; margin-top: 4px; }
+.reading-grid span { display: inline-flex; align-items: baseline; gap: 4px; font-size: 11px; color: #728188; }
+.review-history { display: grid; gap: 10px; }
+
 .login-page { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr); min-height: 100vh; }
 .login-visual { position: relative; display: grid; place-items: center; overflow: hidden; background: #122b33; }
 .login-visual::before { content: ''; position: absolute; inset: 0; background-image: linear-gradient(rgb(10 32 39 / 21%) 1px, transparent 1px), linear-gradient(90deg, rgb(10 32 39 / 21%) 1px, transparent 1px); background-size: 52px 52px; }

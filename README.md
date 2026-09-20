@@ -28,8 +28,13 @@ docker compose down -v --remove-orphans
 |---|---|---|---|
 | 炉台 | `Furnace` | `/api/furnaces` | available, charging, maintenance, locked |
 | 炉次 | `Heat` | `/api/heats` | charged, melting, sampling, hold, accepted, rejected |
-| 化验样本 | `ChemicalSample` | `/api/samples` | collected, testing, verified, rejected |
+| 化验样本 | `ChemicalSample` | `/api/samples` | collected, testing, verified, locked, rejected |
 | 质量决定 | `QualityDecision` | `/api/decisions` | draft, accept, remelt, scrap |
+| 炉次放行合议 | `HeatReleaseReview` | `/api/release-reviews`、`/api/release-board` | open, accepted, remelted, scrapped |
+
+- **炉次放行合议**：同一炉次须有两份已复核（verified）样本，碳/硅/硫/磷均在炉次冻结牌号范围内，且两份样本的碳、硅读数差值各不超过 0.05%，复核员才能判定合格放行；不满足时只能返炉或报废并填写原因。
+- 判定通过时在单个数据库事务内一次落盘：合议终判、炉次 accepted、两份样本 locked、质量决定 accept 与全部审计；任一步失败整体回滚。合议按炉次唯一索引 + 状态/版本条件更新（compare-and-set），重复或并发判定只成功一次（其余请求返回 409）。
+- 质量判定页（`/decisions`）为配对看板：展示配对状态（配对不足/被阻塞/可放行/已锁定验收/已终判）、两份样本 C/Si/S/P 读数、ΔC/ΔSi 与逐条阻塞原因，刷新后与已落盘结果保持一致。
 
 - JWT 登录和 viewer/operator/reviewer/admin 四级 RBAC。
 - 所有状态变化使用乐观锁并写入不可覆盖的审计日志。
@@ -112,6 +117,8 @@ cd .. && docker compose config --quiet
 |---|---|---|
 | `HeatState` | `charged, melting, sampling, hold, accepted, rejected` | `backend/internal/constants/status.go`、`frontend/src/types/status.ts` |
 | `DecisionType` | `accept, remelt, scrap` | `backend/internal/constants/status.go`、`frontend/src/types/status.ts` |
+| `ReleaseReviewState` | `open, accepted, remelted, scrapped` | `backend/internal/constants/status.go`、`frontend/src/types/status.ts` |
+| 样本锁定 | `verified -> locked`（仅合议 accept 时） | 同上两处及 `backend/internal/service/release_rules.go` |
 
 每个实体自己的完整迁移图同样位于 `backend/internal/constants/status.go`；页面使用的状态列表位于 `frontend/src/types/status.ts`。修改状态时必须同步两处并更新对应服务测试。
 

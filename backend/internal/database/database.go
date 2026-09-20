@@ -25,7 +25,10 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*gorm.DB, *
 	case "mysql":
 		dialector = mysql.Open(cfg.DatabaseDSN)
 	case "sqlite":
-		dialector = sqlite.Open(cfg.DatabaseDSN)
+		// glebarez/modernc uses _pragma DSN options. SQLite serializes writers,
+		// so the connection pool is capped to one connection below; WAL keeps
+		// readers working and busy_timeout is a second line of defense.
+		dialector = sqlite.Open(cfg.DatabaseDSN + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	default:
 		return nil, nil, fmt.Errorf("unsupported database driver %q", cfg.DatabaseDriver)
 	}
@@ -58,6 +61,14 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*gorm.DB, *
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect database: %w", err)
 	}
+	if cfg.DatabaseDriver == "sqlite" {
+		if sqlDB, poolErr := db.DB(); poolErr == nil {
+			// SQLite serializes writes; a single connection makes concurrent
+			// verdict transactions queue instead of hitting SQLITE_BUSY. The
+			// compare-and-set claim still ensures only one verdict wins.
+			sqlDB.SetMaxOpenConns(1)
+		}
+	}
 	if err := migrate(db); err != nil {
 		return nil, nil, err
 	}
@@ -78,6 +89,7 @@ func migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&model.User{}, &model.AuditLog{},
 		&model.Furnace{}, &model.Heat{}, &model.ChemicalSample{}, &model.QualityDecision{},
+		&model.HeatReleaseReview{},
 	)
 }
 
@@ -95,7 +107,10 @@ func Seed(ctx context.Context, db *gorm.DB) error {
 		if err := seedSamples(tx); err != nil {
 			return err
 		}
-		return seedDecisions(tx)
+		if err := seedDecisions(tx); err != nil {
+			return err
+		}
+		return seedReleaseReviews(tx)
 	})
 }
 
@@ -155,6 +170,7 @@ func seedHeats(db *gorm.DB) error {
 		newHeat("H-260821-03", "灰铸铁待判炉次", "hold", "F-001", "HT250", "熔炼甲班", 10400, 1490, 3.10, 3.40, 1.80, 2.20, 0.08, 0.12, now.Add(-8*time.Hour)),
 		newHeat("H-260821-04", "球墨铸铁已接收炉次", "accepted", "F-001", "QT450-10", "熔炼甲班", 9600, 1520, 3.40, 3.80, 2.20, 2.80, 0.05, 0.08, now.Add(-14*time.Hour)),
 		newHeat("H-260821-05", "铸钢报废炉次", "rejected", "F-002", "ZG270-500", "熔炼乙班", 16800, 1650, 0.25, 0.35, 0.20, 0.50, 0.04, 0.04, now.Add(-20*time.Hour)),
+		newHeat("H-260821-06", "灰铸铁碳差超标待判炉次", "hold", "F-001", "HT250", "熔炼甲班", 10100, 1495, 3.10, 3.40, 1.80, 2.20, 0.08, 0.12, now.Add(-6*time.Hour)),
 	}
 	return db.Create(&items).Error
 }
@@ -177,8 +193,12 @@ func seedSamples(db *gorm.DB) error {
 	now := time.Now().UTC()
 	items := []model.ChemicalSample{
 		newSample("CS-260822-01", "炉前铸钢样本", "testing", "H-260822-02", "炉前包", "OES-2026.3", "operator", 0.31, 0.34, 0.72, 0.021, 0.025, now.Add(-35*time.Minute)),
-		newSample("CS-260821-02", "灰铸铁终检样本", "verified", "H-260821-03", "浇包前", "OES-2026.3", "reviewer", 3.24, 2.02, 0.71, 0.042, 0.076, now.Add(-7*time.Hour)),
-		newSample("CS-260821-03", "球墨铸铁放行样本", "verified", "H-260821-04", "浇包前", "OES-2026.3", "reviewer", 3.61, 2.48, 0.29, 0.028, 0.051, now.Add(-13*time.Hour)),
+		newSample("CS-260821-02", "灰铸铁终检样本甲", "verified", "H-260821-03", "浇包前", "OES-2026.3", "reviewer", 3.24, 2.02, 0.71, 0.042, 0.076, now.Add(-7*time.Hour)),
+		newSample("CS-260821-05", "灰铸铁复核样本乙", "verified", "H-260821-03", "炉前包", "OES-2026.3", "reviewer", 3.27, 1.99, 0.70, 0.038, 0.071, now.Add(-6*time.Hour+20*time.Minute)),
+		newSample("CS-260821-06", "灰铸铁超差样本甲", "verified", "H-260821-06", "浇包前", "OES-2026.3", "reviewer", 3.18, 1.97, 0.68, 0.044, 0.080, now.Add(-5*time.Hour)),
+		newSample("CS-260821-07", "灰铸铁超差样本乙", "verified", "H-260821-06", "炉前包", "OES-2026.3", "reviewer", 3.31, 2.01, 0.69, 0.047, 0.083, now.Add(-4*time.Hour+40*time.Minute)),
+		newSample("CS-260821-03", "球墨铸铁放行样本", "locked", "H-260821-04", "浇包前", "OES-2026.3", "reviewer", 3.61, 2.48, 0.29, 0.028, 0.051, now.Add(-13*time.Hour)),
+		newSample("CS-260821-08", "球墨铸铁放行样本乙", "locked", "H-260821-04", "炉前包", "OES-2026.3", "reviewer", 3.58, 2.51, 0.30, 0.031, 0.048, now.Add(-12*time.Hour+50*time.Minute)),
 		newSample("CS-260821-04", "铸钢超限样本", "verified", "H-260821-05", "炉前包", "OES-2026.3", "reviewer", 0.48, 0.33, 0.74, 0.061, 0.052, now.Add(-19*time.Hour)),
 	}
 	return db.Create(&items).Error
@@ -218,4 +238,57 @@ func seedDecisions(db *gorm.DB) error {
 		},
 	}
 	return db.Create(&items).Error
+}
+
+// seedReleaseReviews opens one ready and one blocked joint review so the
+// quality page demonstrates both the accept and remelt/scrap paths.
+func seedReleaseReviews(db *gorm.DB) error {
+	var count int64
+	if err := db.Model(&model.HeatReleaseReview{}).Count(&count).Error; err != nil || count > 0 {
+		return err
+	}
+	type pair struct {
+		code, name, heat, firstSample, secondSample, blockers string
+		firstC, secondC, firstSi, secondSi                    float64
+	}
+	pairs := []pair{
+		{
+			code: "RL-260821-03", name: "灰铸铁放行合议", heat: "H-260821-03",
+			firstSample: "CS-260821-02", secondSample: "CS-260821-05", blockers: "",
+			firstC: 3.24, secondC: 3.27, firstSi: 2.02, secondSi: 1.99,
+		},
+		{
+			code: "RL-260821-06", name: "灰铸铁碳差阻塞合议", heat: "H-260821-06",
+			firstSample: "CS-260821-06", secondSample: "CS-260821-07",
+			blockers: "两份样本碳读数差值 0.130% 超过 0.05% 的合议容差",
+			firstC:   3.18, secondC: 3.31, firstSi: 1.97, secondSi: 2.01,
+		},
+	}
+	items := make([]model.HeatReleaseReview, 0, len(pairs))
+	for _, p := range pairs {
+		var first, second model.ChemicalSample
+		if err := db.Where("code = ?", p.firstSample).First(&first).Error; err != nil {
+			return err
+		}
+		if err := db.Where("code = ?", p.secondSample).First(&second).Error; err != nil {
+			return err
+		}
+		items = append(items, model.HeatReleaseReview{
+			BaseModel: model.BaseModel{Code: p.code, Name: p.name, Status: "open", Version: 1, Description: "炉前两份已复核样本配对待判"},
+			HeatCode:  p.heat, FirstSampleID: first.ID, SecondSampleID: second.ID,
+			FirstSampleCode: first.Code, SecondSampleCode: second.Code, AlloyGrade: "HT250",
+			Reviewer: "reviewer", FirstCarbonPct: p.firstC, SecondCarbonPct: p.secondC,
+			FirstSiliconPct: p.firstSi, SecondSiliconPct: p.secondSi,
+			CarbonDeltaPct: mathAbs(p.firstC - p.secondC), SiliconDeltaPct: mathAbs(p.firstSi - p.secondSi),
+			PairingBlockers: p.blockers,
+		})
+	}
+	return db.Create(&items).Error
+}
+
+func mathAbs(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }

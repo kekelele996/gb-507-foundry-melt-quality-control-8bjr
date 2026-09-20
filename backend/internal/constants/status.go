@@ -26,6 +26,26 @@ const (
 
 var AllDecisionType = []string{"accept", "remelt", "scrap"}
 
+type ReleaseReviewState string
+
+const (
+	ReleaseReviewOpen     ReleaseReviewState = "open"
+	ReleaseReviewAccepted ReleaseReviewState = "accepted"
+	ReleaseReviewRemelted ReleaseReviewState = "remelted"
+	ReleaseReviewScrapped ReleaseReviewState = "scrapped"
+)
+
+var AllReleaseReviewState = []string{"open", "accepted", "remelted", "scrapped"}
+
+// ReleaseReviewTransitions expresses the two-person joint-release verdict.
+// A review can only leave "open" once, directly to a terminal verdict.
+var ReleaseReviewTransitions = map[string]map[string]bool{
+	"open":     {"accepted": true, "remelted": true, "scrapped": true},
+	"accepted": {},
+	"remelted": {},
+	"scrapped": {},
+}
+
 var FurnaceTransitions = map[string]map[string]bool{
 	"available":   {"charging": true, "maintenance": true},
 	"charging":    {"available": true, "maintenance": true},
@@ -45,7 +65,8 @@ var HeatTransitions = map[string]map[string]bool{
 var ChemicalSampleTransitions = map[string]map[string]bool{
 	"collected": {"testing": true},
 	"testing":   {"verified": true, "rejected": true},
-	"verified":  {},
+	"verified":  {"locked": true},
+	"locked":    {},
 	"rejected":  {},
 }
 

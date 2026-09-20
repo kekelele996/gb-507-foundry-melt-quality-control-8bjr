@@ -37,7 +37,8 @@ func TestDecisionValidatesOwnershipAndAtomicallyFinalizesHeat(t *testing.T) {
 	}
 	sample := workflowSample("S-TEST-01", heat.Code)
 	otherSample := workflowSample("S-TEST-02", otherHeat.Code)
-	if err := db.Create(&[]model.ChemicalSample{sample, otherSample}).Error; err != nil {
+	pairedSample := workflowSampleWith("S-TEST-03", heat.Code, 3.32, 2.03, 0.035, 0.060)
+	if err := db.Create(&[]model.ChemicalSample{sample, otherSample, pairedSample}).Error; err != nil {
 		t.Fatalf("seed samples: %v", err)
 	}
 
@@ -73,12 +74,21 @@ func TestDecisionValidatesOwnershipAndAtomicallyFinalizesHeat(t *testing.T) {
 	if storedHeat.Status != "accepted" || storedHeat.Version != 2 {
 		t.Fatalf("heat final state was not derived atomically: %#v", storedHeat)
 	}
+	for _, code := range []string{sample.Code, pairedSample.Code} {
+		locked, err := sampleRepository.GetByCode(ctx, code)
+		if err != nil {
+			t.Fatalf("load locked sample %s: %v", code, err)
+		}
+		if locked.Status != "locked" || locked.Version != 2 {
+			t.Fatalf("sample %s was not locked atomically: %#v", code, locked)
+		}
+	}
 	var auditCount int64
 	if err := db.Model(&model.AuditLog{}).Where("request_id = ?", "req-final").Count(&auditCount).Error; err != nil {
 		t.Fatalf("count audits: %v", err)
 	}
-	if auditCount != 2 {
-		t.Fatalf("expected decision and heat audits, got %d", auditCount)
+	if auditCount != 4 {
+		t.Fatalf("expected decision, two sample locks and heat audits, got %d", auditCount)
 	}
 	if _, err := decisions.Transition(ctx, created.ID, dto.TransitionRequest{
 		Status: "remelt", ExpectedVersion: 2, Reason: "attempt reversal",
@@ -155,10 +165,14 @@ func workflowHeat(code string) model.Heat {
 }
 
 func workflowSample(code, heatCode string) model.ChemicalSample {
+	return workflowSampleWith(code, heatCode, 3.3, 2.0, 0.04, 0.07)
+}
+
+func workflowSampleWith(code, heatCode string, carbon, silicon, sulfur, phosphorus float64) model.ChemicalSample {
 	return model.ChemicalSample{
 		BaseModel: model.BaseModel{Code: code, Name: code, Status: "verified", Version: 1},
 		HeatCode:  heatCode, SamplePoint: "ladle", MethodVersion: "OES-1", Analyst: "operator",
-		CarbonPct: 3.3, SiliconPct: 2.0, ManganesePct: 0.7, SulfurPct: 0.04, PhosphorusPct: 0.07,
+		CarbonPct: carbon, SiliconPct: silicon, ManganesePct: 0.7, SulfurPct: sulfur, PhosphorusPct: phosphorus,
 		SampledAt: time.Now().UTC().Add(-30 * time.Minute), Evidence: "LIMS-result",
 	}
 }

@@ -11,6 +11,20 @@ import (
 
 var ErrVersionConflict = errors.New("record was changed by another request")
 
+// IsDuplicateKeyError reports whether err is a unique-constraint violation.
+// String matching is sufficient for the three supported drivers (sqlite uses
+// "UNIQUE constraint failed", postgres error code 23505, mysql error 1062)
+// and keeps the repository free of driver-specific imports.
+func IsDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "UNIQUE constraint failed") ||
+		strings.Contains(text, "duplicate key value violates unique constraint") ||
+		strings.Contains(text, "Error 1062")
+}
+
 type Page[T any] struct {
 	Items    []T   `json:"items"`
 	Total    int64 `json:"total"`

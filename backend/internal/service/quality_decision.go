@@ -126,12 +126,31 @@ func (s *qualityDecisionService) Transition(ctx context.Context, id uint, input 
 		if !constants.CanTransition(constants.QualityDecisionTransitions, current.Status, target) {
 			return model.QualityDecision{}, fmt.Errorf("%w: %s -> %s", ErrInvalidTransition, current.Status, target)
 		}
-		heat, sample, err := s.resolveContext(txCtx, current.HeatCode, current.SampleCode)
+		heat, _, err := s.resolveContext(txCtx, current.HeatCode, current.SampleCode)
 		if err != nil {
 			return model.QualityDecision{}, err
 		}
-		if target == string(constants.DecisionTypeAccept) && (sample.Status != "verified" || !chemistryWithinSpecification(heat, sample)) {
-			return model.QualityDecision{}, fmt.Errorf("%w: acceptance requires a verified sample within the heat specification", ErrInvalidInput)
+		if target == string(constants.DecisionTypeAccept) {
+			verified, verifiedErr := s.samples.ListVerifiedForHeat(txCtx, heat.Code)
+			if verifiedErr != nil {
+				return model.QualityDecision{}, fmt.Errorf("load paired samples: %w", verifiedErr)
+			}
+			evaluation := EvaluatePairing(heat, verified)
+			if !evaluation.Eligible() || evaluation.First == nil || evaluation.Second == nil {
+				return model.QualityDecision{}, fmt.Errorf("%w: 放行需要两份已复核样本且碳硅硫磷在牌号范围内、ΔC/ΔSi各不超过 %.2f", ErrInvalidInput, model.ChemistryAgreementTolerance)
+			}
+			if err := s.samples.LockVerified(txCtx, evaluation.First.ID); err != nil {
+				return model.QualityDecision{}, fmt.Errorf("lock first paired sample: %w", err)
+			}
+			if err := s.samples.LockVerified(txCtx, evaluation.Second.ID); err != nil {
+				return model.QualityDecision{}, fmt.Errorf("lock second paired sample: %w", err)
+			}
+			if err := s.security.Audit(txCtx, actor, requestID, "transition", "ChemicalSample", evaluation.First.ID, "verified", "locked", "sample locked by accepted quality decision"); err != nil {
+				return model.QualityDecision{}, fmt.Errorf("persist first sample lock audit: %w", err)
+			}
+			if err := s.security.Audit(txCtx, actor, requestID, "transition", "ChemicalSample", evaluation.Second.ID, "verified", "locked", "sample locked by accepted quality decision"); err != nil {
+				return model.QualityDecision{}, fmt.Errorf("persist second sample lock audit: %w", err)
+			}
 		}
 		if exists, duplicateErr := s.repository.HasForHeat(txCtx, heat.Code, current.ID); duplicateErr != nil {
 			return model.QualityDecision{}, duplicateErr
@@ -222,13 +241,6 @@ func validateQualityDecision(code, name, heatCode, sampleCode, reviewer, reason 
 		return fmt.Errorf("%w: decision time is invalid", ErrInvalidInput)
 	}
 	return nil
-}
-
-func chemistryWithinSpecification(heat model.Heat, sample model.ChemicalSample) bool {
-	return sample.IsPlausible() &&
-		sample.CarbonPct >= heat.CarbonMinPct && sample.CarbonPct <= heat.CarbonMaxPct &&
-		sample.SiliconPct >= heat.SiliconMinPct && sample.SiliconPct <= heat.SiliconMaxPct &&
-		sample.SulfurPct <= heat.SulfurMaxPct && sample.PhosphorusPct <= heat.PhosphorusMaxPct
 }
 
 func decisionAuditDetail(item model.QualityDecision) string {

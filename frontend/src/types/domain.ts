@@ -67,6 +67,65 @@ export interface QualityDecision extends BaseRecord {
   evidence: string;
 }
 
+export interface HeatReleaseReview extends BaseRecord {
+  heatCode: string;
+  firstSampleId: number;
+  secondSampleId: number;
+  firstSampleCode: string;
+  secondSampleCode: string;
+  alloyGrade: string;
+  reviewer: string;
+  verdictReason: string;
+  decidedAt: string;
+  firstCarbonPct: number;
+  secondCarbonPct: number;
+  firstSiliconPct: number;
+  secondSiliconPct: number;
+  carbonDeltaPct: number;
+  siliconDeltaPct: number;
+  pairingBlockers: string;
+}
+
+export interface ReleaseSampleView {
+  id: number;
+  code: string;
+  status: string;
+  carbonPct: number;
+  siliconPct: number;
+  sulfurPct: number;
+  phosphorusPct: number;
+  manganesePct: number;
+  sampledAt: string;
+}
+
+export interface ReleasePairingView {
+  heatCode: string;
+  heatName: string;
+  heatStatus: string;
+  heatVersion: number;
+  alloyGrade: string;
+  carbonRange: [number, number];
+  siliconRange: [number, number];
+  sulfurMaxPct: number;
+  phosphorusMaxPct: number;
+  pairingState: 'incomplete' | 'blocked' | 'ready' | 'locked-in' | 'closed';
+  verifiedCount: number;
+  firstSample: ReleaseSampleView | null;
+  secondSample: ReleaseSampleView | null;
+  carbonDeltaPct: number;
+  siliconDeltaPct: number;
+  carbonDeltaOk: boolean;
+  siliconDeltaOk: boolean;
+  blockers: string[];
+  reviewId: number;
+  reviewCode: string;
+  reviewStatus: string;
+  reviewVersion: number;
+  reviewer: string;
+  decisionCode: string;
+  decisionStatus: string;
+}
+
 export interface PageMeta {
   page: number;
   pageSize: number;

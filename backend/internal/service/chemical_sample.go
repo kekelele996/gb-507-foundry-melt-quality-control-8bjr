@@ -79,7 +79,7 @@ func (s *chemicalSampleService) Update(ctx context.Context, id uint, input dto.U
 		if err != nil {
 			return model.ChemicalSample{}, err
 		}
-		if current.Status == "verified" || current.Status == "rejected" {
+		if current.Status == "verified" || current.Status == "rejected" || current.Status == "locked" {
 			return model.ChemicalSample{}, fmt.Errorf("%w: terminal laboratory evidence is immutable", ErrInvalidInput)
 		}
 		if normalizeCode(input.HeatCode) != current.HeatCode {

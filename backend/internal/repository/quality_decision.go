@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/blueship581/foundry-melt-quality-control/backend/internal/dto"
 	"github.com/blueship581/foundry-melt-quality-control/backend/internal/model"
@@ -14,6 +15,8 @@ type QualityDecisionRepository interface {
 	Get(context.Context, uint) (model.QualityDecision, error)
 	GetByCode(context.Context, string) (model.QualityDecision, error)
 	HasForHeat(context.Context, string, uint) (bool, error)
+	FindForHeat(context.Context, string) (model.QualityDecision, error)
+	FinalizeDraft(context.Context, uint, string, string, string, string) error
 	Create(context.Context, *model.QualityDecision) error
 	Update(context.Context, uint, uint, *model.QualityDecision) error
 	Delete(context.Context, uint) error
@@ -48,6 +51,30 @@ func (r *qualityDecisionRepository) HasForHeat(ctx context.Context, heatCode str
 	}
 	err := db.Count(&total).Error
 	return total > 0, err
+}
+func (r *qualityDecisionRepository) FindForHeat(ctx context.Context, heatCode string) (model.QualityDecision, error) {
+	var item model.QualityDecision
+	err := dbForContext(ctx, r.store.db).Where("heat_code = ?", heatCode).First(&item).Error
+	return item, err
+}
+
+// FinalizeDraft moves an existing draft decision to a terminal verdict. The
+// conditional draft predicate makes a second concurrent finalize lose the race.
+func (r *qualityDecisionRepository) FinalizeDraft(ctx context.Context, id uint, target, reviewer, reason, evidence string) error {
+	result := dbForContext(ctx, r.store.db).Model(&model.QualityDecision{}).
+		Where("id = ? AND status = ?", id, "draft").
+		Updates(map[string]any{
+			"status": target, "reviewer": reviewer, "reason": reason, "evidence": evidence,
+			"version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC(),
+			"decided_at": time.Now().UTC(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrVersionConflict
+	}
+	return nil
 }
 func (r *qualityDecisionRepository) Create(ctx context.Context, item *model.QualityDecision) error {
 	return r.store.Create(ctx, item)
