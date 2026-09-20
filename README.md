@@ -28,10 +28,14 @@ docker compose down -v --remove-orphans
 |---|---|---|---|
 | 炉台 | `Furnace` | `/api/furnaces` | available, charging, maintenance, locked |
 | 炉次 | `Heat` | `/api/heats` | charged, melting, sampling, hold, accepted, rejected |
-| 化验样本 | `ChemicalSample` | `/api/samples` | collected, testing, verified, rejected |
+| 化验样本 | `ChemicalSample` | `/api/samples` | collected, testing, verified, locked, rejected |
 | 质量决定 | `QualityDecision` | `/api/decisions` | draft, accept, remelt, scrap |
+| 炉次放行合议 | `ReleasePanel`（读模型） | `/api/release-panels`、`/api/release-adjudications` | paired-ready, pairing-short, pairing-absent, already-adjudged |
 
 - JWT 登录和 viewer/operator/reviewer/admin 四级 RBAC。
+- **炉次放行合议**：同一炉次须有两份 `verified` 已复核样本，碳/硅/硫/磷均在牌号冻结范围内，且两份样本 C、Si 读数差值各不超过 0.05%，复核员才可判定合格；否则只能返炉（remelt）或报废（scrap）并强制填写原因。合格通过时炉次验收（`accepted`）、两份样本锁定（`locked`）、质量决定与审计在同一数据库事务内一次落盘，任一步失败全部回滚；重复或并发判定仅成功一次（`quality_decisions.heat_code` 唯一索引 + 乐观锁，冲突返回 409）。
+  - 合议面板：`GET /api/release-panels`（待判/已判炉次列表）、`GET /api/release-panels/:heatCode`（配对状态、逐元素读数、ΔC/ΔSi 与阻塞原因；面板按已提交数据重建，刷新后一致）。
+  - 提交判定：`POST /api/release-adjudications`（reviewer/admin），请求体 `{heatCode, decision: accept|remelt|scrap, reason, evidence}`。
 - 所有状态变化使用乐观锁并写入不可覆盖的审计日志。
 - 请求 ID、结构化日志、全局错误映射和 Redis 分布式限流。
 - 提供脱敏运行配置、当前会话、审计汇总和单实体审计历史接口。

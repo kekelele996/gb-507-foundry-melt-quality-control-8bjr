@@ -126,12 +126,33 @@ func (s *qualityDecisionService) Transition(ctx context.Context, id uint, input 
 		if !constants.CanTransition(constants.QualityDecisionTransitions, current.Status, target) {
 			return model.QualityDecision{}, fmt.Errorf("%w: %s -> %s", ErrInvalidTransition, current.Status, target)
 		}
-		heat, sample, err := s.resolveContext(txCtx, current.HeatCode, current.SampleCode)
+		heat, _, err := s.resolveContext(txCtx, current.HeatCode, current.SampleCode)
 		if err != nil {
 			return model.QualityDecision{}, err
 		}
-		if target == string(constants.DecisionTypeAccept) && (sample.Status != "verified" || !chemistryWithinSpecification(heat, sample)) {
-			return model.QualityDecision{}, fmt.Errorf("%w: acceptance requires a verified sample within the heat specification", ErrInvalidInput)
+		if target == string(constants.DecisionTypeAccept) {
+			// Acceptance always runs the heat-release panel gates, regardless
+			// of whether the decision was created through the panel endpoint or
+			// the legacy draft workflow: two independently verified samples,
+			// all four graded elements in range, C/Si deltas within 0.05.
+			verified, listErr := s.samples.ListVerifiedByHeat(txCtx, heat.Code)
+			if listErr != nil {
+				return model.QualityDecision{}, fmt.Errorf("list release samples: %w", listErr)
+			}
+			first, second, paired := releasePair(verified)
+			if !paired {
+				return model.QualityDecision{}, fmt.Errorf("%w: acceptance requires two verified samples; %s",
+					ErrInvalidInput, pairShortageBlocker(len(verified)))
+			}
+			if blockers := pairBlockers(heat, first, second); len(blockers) > 0 {
+				return model.QualityDecision{}, fmt.Errorf("%w: %s", ErrInvalidInput, strings.Join(blockers, "；"))
+			}
+			if current.SampleCode != first.Code && current.SampleCode != second.Code {
+				return model.QualityDecision{}, fmt.Errorf("%w: decision reference sample is not part of the verified pair", ErrInvalidInput)
+			}
+			current.PairedSampleCode = second.Code
+			current.Conditions = strings.TrimSpace(strings.TrimSpace(current.Conditions) + "; " +
+				fmt.Sprintf("配对 %s/%s 双样本四元素在牌号范围内", first.Code, second.Code))
 		}
 		if exists, duplicateErr := s.repository.HasForHeat(txCtx, heat.Code, current.ID); duplicateErr != nil {
 			return model.QualityDecision{}, duplicateErr
@@ -222,13 +243,6 @@ func validateQualityDecision(code, name, heatCode, sampleCode, reviewer, reason 
 		return fmt.Errorf("%w: decision time is invalid", ErrInvalidInput)
 	}
 	return nil
-}
-
-func chemistryWithinSpecification(heat model.Heat, sample model.ChemicalSample) bool {
-	return sample.IsPlausible() &&
-		sample.CarbonPct >= heat.CarbonMinPct && sample.CarbonPct <= heat.CarbonMaxPct &&
-		sample.SiliconPct >= heat.SiliconMinPct && sample.SiliconPct <= heat.SiliconMaxPct &&
-		sample.SulfurPct <= heat.SulfurMaxPct && sample.PhosphorusPct <= heat.PhosphorusMaxPct
 }
 
 func decisionAuditDetail(item model.QualityDecision) string {

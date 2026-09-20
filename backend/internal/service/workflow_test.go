@@ -36,8 +36,11 @@ func TestDecisionValidatesOwnershipAndAtomicallyFinalizesHeat(t *testing.T) {
 		t.Fatalf("read heats: %v", err)
 	}
 	sample := workflowSample("S-TEST-01", heat.Code)
+	secondSample := workflowSample("S-TEST-01B", heat.Code)
+	secondSample.CarbonPct = 3.32
+	secondSample.SiliconPct = 2.03
 	otherSample := workflowSample("S-TEST-02", otherHeat.Code)
-	if err := db.Create(&[]model.ChemicalSample{sample, otherSample}).Error; err != nil {
+	if err := db.Create(&[]model.ChemicalSample{sample, secondSample, otherSample}).Error; err != nil {
 		t.Fatalf("seed samples: %v", err)
 	}
 

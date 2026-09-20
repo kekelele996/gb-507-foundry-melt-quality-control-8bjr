@@ -26,6 +26,16 @@ const (
 
 var AllDecisionType = []string{"accept", "remelt", "scrap"}
 
+// Heat-release panel (炉次放行合议) constants. Acceptance requires two
+// independently reviewed samples whose carbon and silicon readings reproduce
+// within these tolerances while every graded element stays in specification.
+const (
+	ChemicalSampleStatusLocked   = "locked"
+	ReleaseRequiredVerifiedPairs = 2
+	ReleaseCarbonTolerancePct    = 0.05
+	ReleaseSiliconTolerancePct   = 0.05
+)
+
 var FurnaceTransitions = map[string]map[string]bool{
 	"available":   {"charging": true, "maintenance": true},
 	"charging":    {"available": true, "maintenance": true},
@@ -45,8 +55,12 @@ var HeatTransitions = map[string]map[string]bool{
 var ChemicalSampleTransitions = map[string]map[string]bool{
 	"collected": {"testing": true},
 	"testing":   {"verified": true, "rejected": true},
-	"verified":  {},
-	"rejected":  {},
+	// locked is a derived terminal state (like a heat's accepted/rejected):
+	// it is set atomically by the heat-release panel when a heat is accepted,
+	// never by a manual sample transition, so there is no edge into it here.
+	"verified": {},
+	"locked":   {},
+	"rejected": {},
 }
 
 var QualityDecisionTransitions = map[string]map[string]bool{

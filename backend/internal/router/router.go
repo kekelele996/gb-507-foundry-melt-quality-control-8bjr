@@ -37,10 +37,12 @@ func New(cfg config.Config, db *gorm.DB, redisClient *redis.Client, logger *slog
 	heatService := service.NewHeatService(heatRepository, furnaceRepository, chemicalSampleRepository, securityService)
 	chemicalSampleService := service.NewChemicalSampleService(chemicalSampleRepository, heatRepository, securityService)
 	qualityDecisionService := service.NewQualityDecisionService(qualityDecisionRepository, heatRepository, chemicalSampleRepository, securityService)
+	releaseReviewService := service.NewReleaseReviewService(heatRepository, chemicalSampleRepository, qualityDecisionRepository, securityService)
 	furnaceHandler := handler.NewFurnaceHandler(furnaceService)
 	heatHandler := handler.NewHeatHandler(heatService)
 	chemicalSampleHandler := handler.NewChemicalSampleHandler(chemicalSampleService)
 	qualityDecisionHandler := handler.NewQualityDecisionHandler(qualityDecisionService)
+	releaseReviewHandler := handler.NewReleaseReviewHandler(releaseReviewService)
 	systemHandler := handler.NewSystemHandler(securityService, furnaceService, heatService, chemicalSampleService, qualityDecisionService, db, redisClient)
 
 	engine.GET("/healthz", systemHandler.Health)
@@ -60,6 +62,7 @@ func New(cfg config.Config, db *gorm.DB, redisClient *redis.Client, logger *slog
 	heatHandler.Register(api)
 	chemicalSampleHandler.Register(api)
 	qualityDecisionHandler.Register(api)
+	releaseReviewHandler.Register(api)
 
 	engine.NoRoute(func(c *gin.Context) {
 		if c.Request.Method == http.MethodOptions {

@@ -13,6 +13,7 @@ type QualityDecisionRepository interface {
 	List(context.Context, dto.PageQuery) (Page[model.QualityDecision], error)
 	Get(context.Context, uint) (model.QualityDecision, error)
 	GetByCode(context.Context, string) (model.QualityDecision, error)
+	GetByHeatCode(context.Context, string) (model.QualityDecision, error)
 	HasForHeat(context.Context, string, uint) (bool, error)
 	Create(context.Context, *model.QualityDecision) error
 	Update(context.Context, uint, uint, *model.QualityDecision) error
@@ -37,6 +38,11 @@ func (r *qualityDecisionRepository) Get(ctx context.Context, id uint) (model.Qua
 func (r *qualityDecisionRepository) GetByCode(ctx context.Context, code string) (model.QualityDecision, error) {
 	var item model.QualityDecision
 	err := dbForContext(ctx, r.store.db).Where("code = ?", code).First(&item).Error
+	return item, err
+}
+func (r *qualityDecisionRepository) GetByHeatCode(ctx context.Context, heatCode string) (model.QualityDecision, error) {
+	var item model.QualityDecision
+	err := dbForContext(ctx, r.store.db).Where("heat_code = ?", heatCode).First(&item).Error
 	return item, err
 }
 func (r *qualityDecisionRepository) HasForHeat(ctx context.Context, heatCode string, excludeID uint) (bool, error) {

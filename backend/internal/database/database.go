@@ -155,6 +155,8 @@ func seedHeats(db *gorm.DB) error {
 		newHeat("H-260821-03", "灰铸铁待判炉次", "hold", "F-001", "HT250", "熔炼甲班", 10400, 1490, 3.10, 3.40, 1.80, 2.20, 0.08, 0.12, now.Add(-8*time.Hour)),
 		newHeat("H-260821-04", "球墨铸铁已接收炉次", "accepted", "F-001", "QT450-10", "熔炼甲班", 9600, 1520, 3.40, 3.80, 2.20, 2.80, 0.05, 0.08, now.Add(-14*time.Hour)),
 		newHeat("H-260821-05", "铸钢报废炉次", "rejected", "F-002", "ZG270-500", "熔炼乙班", 16800, 1650, 0.25, 0.35, 0.20, 0.50, 0.04, 0.04, now.Add(-20*time.Hour)),
+		newHeat("H-260822-06", "灰铸铁待判炉次（碳差阻塞）", "hold", "F-001", "HT250", "熔炼甲班", 9900, 1490, 3.10, 3.40, 1.80, 2.20, 0.08, 0.12, now.Add(-70*time.Minute)),
+		newHeat("H-260822-07", "球墨铸铁待判炉次（样本不足）", "hold", "F-001", "QT450-10", "熔炼甲班", 9700, 1505, 3.40, 3.80, 2.20, 2.80, 0.05, 0.08, now.Add(-50*time.Minute)),
 	}
 	return db.Create(&items).Error
 }
@@ -177,9 +179,14 @@ func seedSamples(db *gorm.DB) error {
 	now := time.Now().UTC()
 	items := []model.ChemicalSample{
 		newSample("CS-260822-01", "炉前铸钢样本", "testing", "H-260822-02", "炉前包", "OES-2026.3", "operator", 0.31, 0.34, 0.72, 0.021, 0.025, now.Add(-35*time.Minute)),
-		newSample("CS-260821-02", "灰铸铁终检样本", "verified", "H-260821-03", "浇包前", "OES-2026.3", "reviewer", 3.24, 2.02, 0.71, 0.042, 0.076, now.Add(-7*time.Hour)),
-		newSample("CS-260821-03", "球墨铸铁放行样本", "verified", "H-260821-04", "浇包前", "OES-2026.3", "reviewer", 3.61, 2.48, 0.29, 0.028, 0.051, now.Add(-13*time.Hour)),
+		newSample("CS-260821-02", "灰铸铁终检样本A", "verified", "H-260821-03", "浇包前", "OES-2026.3", "reviewer", 3.24, 2.02, 0.71, 0.042, 0.076, now.Add(-7*time.Hour)),
+		newSample("CS-260821-02B", "灰铸铁终检样本B", "verified", "H-260821-03", "浇注口", "OES-2026.3", "reviewer", 3.27, 2.00, 0.70, 0.045, 0.072, now.Add(-6*time.Hour)),
+		newSample("CS-260821-03", "球墨铸铁放行样本A", "locked", "H-260821-04", "浇包前", "OES-2026.3", "reviewer", 3.61, 2.48, 0.29, 0.028, 0.051, now.Add(-13*time.Hour)),
+		newSample("CS-260821-03B", "球墨铸铁放行样本B", "locked", "H-260821-04", "浇注口", "OES-2026.3", "reviewer", 3.64, 2.46, 0.30, 0.030, 0.049, now.Add(-12*time.Hour)),
 		newSample("CS-260821-04", "铸钢超限样本", "verified", "H-260821-05", "炉前包", "OES-2026.3", "reviewer", 0.48, 0.33, 0.74, 0.061, 0.052, now.Add(-19*time.Hour)),
+		newSample("CS-260822-06A", "灰铸铁复核样本A（碳差）", "verified", "H-260822-06", "浇包前", "OES-2026.3", "reviewer", 3.22, 2.05, 0.72, 0.050, 0.080, now.Add(-65*time.Minute)),
+		newSample("CS-260822-06B", "灰铸铁复核样本B（碳差）", "verified", "H-260822-06", "浇注口", "OES-2026.3", "reviewer", 3.30, 2.03, 0.71, 0.048, 0.077, now.Add(-60*time.Minute)),
+		newSample("CS-260822-07A", "球墨铸铁复核样本A（缺一）", "verified", "H-260822-07", "浇包前", "OES-2026.3", "reviewer", 3.58, 2.50, 0.30, 0.030, 0.055, now.Add(-45*time.Minute)),
 	}
 	return db.Create(&items).Error
 }
@@ -202,14 +209,11 @@ func seedDecisions(db *gorm.DB) error {
 	now := time.Now().UTC()
 	items := []model.QualityDecision{
 		{
-			BaseModel: model.BaseModel{Code: "QD-260821-01", Name: "灰铸铁待签质量决定", Status: "draft", Version: 1, Description: "等待质量负责人签发"},
-			HeatCode:  "H-260821-03", SampleCode: "CS-260821-02", Reviewer: "reviewer", Reason: "成分复核完成，待确认用途",
-			Conditions: "核对浇注温度记录", DecidedAt: now.Add(-6 * time.Hour), Evidence: "QMS-QD-260821-01",
-		},
-		{
-			BaseModel: model.BaseModel{Code: "QD-260821-02", Name: "球墨铸铁接收决定", Status: "accept", Version: 2, Description: "成分在冻结规格范围内"},
-			HeatCode:  "H-260821-04", SampleCode: "CS-260821-03", Reviewer: "reviewer", Reason: "五元素结果满足炉次规格",
-			Conditions: "按标准工艺浇注", DecidedAt: now.Add(-12 * time.Hour), Evidence: "QMS-QD-260821-02",
+			BaseModel: model.BaseModel{Code: "QD-260821-02", Name: "球墨铸铁放行合议接收", Status: "accept", Version: 2, Description: "双样本复核合格，炉次放行"},
+			HeatCode:  "H-260821-04", SampleCode: "CS-260821-03", PairedSampleCode: "CS-260821-03B", Reviewer: "reviewer",
+			Reason:     "两份复核样本碳硅硫磷均在 QT450-10 范围内，碳硅差值均小于 0.05%",
+			Conditions: "配对 CS-260821-03/CS-260821-03B；ΔC=0.030% ΔSi=0.020%，双样本四元素均在牌号范围内",
+			DecidedAt:  now.Add(-12 * time.Hour), Evidence: "QMS-QD-260821-02",
 		},
 		{
 			BaseModel: model.BaseModel{Code: "QD-260821-03", Name: "铸钢报废决定", Status: "scrap", Version: 2, Description: "碳硫磷多项超限"},

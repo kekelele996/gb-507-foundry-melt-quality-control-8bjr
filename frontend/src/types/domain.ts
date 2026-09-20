@@ -60,10 +60,41 @@ export interface ChemicalSample extends BaseRecord {
 export interface QualityDecision extends BaseRecord {
   heatCode: string;
   sampleCode: string;
+  pairedSampleCode?: string;
   reviewer: string;
   reason: string;
   conditions: string;
   decidedAt: string;
+  evidence: string;
+}
+
+export interface ReleaseElementCheck {
+  element: string;
+  value: number;
+  min: number;
+  max: number;
+  pass: boolean;
+}
+
+export interface ReleaseSampleView extends ChemicalSample {
+  elementResults: ReleaseElementCheck[];
+}
+
+export interface ReleasePanel {
+  heat: Heat;
+  decision: QualityDecision | null;
+  pairStatus: 'paired-ready' | 'pairing-short' | 'pairing-absent' | 'already-adjudged';
+  samples: ReleaseSampleView[];
+  carbonDelta: number;
+  siliconDelta: number;
+  blockers: string[];
+  canAccept: boolean;
+}
+
+export interface ReleaseAdjudicationRequest {
+  heatCode: string;
+  decision: 'accept' | 'remelt' | 'scrap';
+  reason: string;
   evidence: string;
 }
 
